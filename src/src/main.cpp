@@ -13,10 +13,10 @@
 
 Adafruit_SSD1306 display(128, 64, &Wire, -1);
 
-Encoder encoder(2, 3);
-Encoder encoderX(5, 6);
-Encoder encoderY(7, 8);
-Encoder encoderZ(9, 10);
+Encoder encoder(3, 2);
+Encoder encoderX(6, 5);
+Encoder encoderY(8, 7);
+Encoder encoderZ(10, 9);
 
 Bounce selectButton = Bounce();
 Bounce buttonXUp = Bounce();
@@ -30,10 +30,14 @@ Axis axisX, axisY, axisZ;
 
 int32_t encoderValue  = -999;
 
-enum State_enum {IDLE, WAIT_FOR_BUTTON, WAIT_FOR_BUTTON_TIMEOUT, SET_DMX_CHANNEL};
-uint8_t state = IDLE;
-unsigned long stateEnteredMillis;
+enum statesEnum {IDLE, WAIT_FOR_BUTTON, WAIT_FOR_BUTTON_TIMEOUT, SET_DMX_CHANNEL};
+uint8_t state = IDLE, nextState = IDLE;
+
+Axis* selectedAxis = &axisX;
+
+unsigned long currentMillis, stateEnteredMillis, lastTimeValueSend;
 unsigned long waitForButtonTimeout = 1000;
+unsigned long sendValueInterval = 1000/25;
 Axis* axisSetup;
 
 void displayValues() {
@@ -90,104 +94,53 @@ void stateMachineRun() {
   switch (state)
   {
 
-
   case IDLE:
     // send DMX Values if one axis has changed
     if (axisX.changed() || axisY.changed() || axisZ.changed()) {
       displayValues();
       sendDMX();
     }
-
-    if (buttonXUp.fallingEdge() || buttonXDown.fallingEdge() || buttonYUp.fallingEdge() || buttonYDown.fallingEdge() || buttonZUp.fallingEdge() || buttonZDown.fallingEdge()) {
+    if(selectButton.fallingEdge()){
       stateEnteredMillis = millis();
+      nextState = SET_DMX_CHANNEL;
       state = WAIT_FOR_BUTTON;
     }
+
+    if (currentMillis - lastTimeValueSend > sendValueInterval) {
+      Serial.println(axisZ.getValue());
+      lastTimeValueSend = currentMillis;
+    }
+    
     break;
 
 
 
   case WAIT_FOR_BUTTON:
-    displayInfoMsg("Wait For Button");
-    if(stateEnteredMillis + waitForButtonTimeout < millis() || buttonXUp.risingEdge() || buttonXDown.risingEdge() || buttonYUp.risingEdge() || buttonYDown.risingEdge() || buttonZUp.risingEdge() || buttonZDown.risingEdge()) {
-      state = WAIT_FOR_BUTTON_TIMEOUT;
-      break;
+    displayInfoMsg("Press 1s");
+    if( currentMillis - waitForButtonTimeout > stateEnteredMillis /*|| buttonXUp.risingEdge() || buttonXDown.risingEdge() || buttonYUp.risingEdge() || buttonYDown.risingEdge() || buttonZUp.risingEdge() || buttonZDown.risingEdge()*/) {
+      Serial.print("next state: ");
+      Serial.println(nextState);
+      state = nextState;
     }
-    // check if second btn is pressed:
-    if (buttonXUp.read() == LOW || buttonXDown.read() == LOW) {
-      if (buttonXUp.fallingEdge() || buttonXDown.fallingEdge() ) {
-        axisSetup = &axisX;
-        displayInfoMsg(axisSetup->name);
-        encoder.write(axisSetup->getDMXChannel() * 4);
-        state = SET_DMX_CHANNEL;
-        break;
-      }
-    }
-    else if (buttonYUp.read() == LOW || buttonYDown.read() == LOW) {
-      if (buttonYUp.fallingEdge() || buttonYDown.fallingEdge() ) {
-        axisSetup = &axisY;
-        displayInfoMsg(axisSetup->name);
-        encoder.write(axisSetup->getDMXChannel() * 4);
-        state = SET_DMX_CHANNEL;
-        break;
-      }
-    }
-    else if (buttonZUp.read() == LOW || buttonZDown.read() == LOW) {
-      if (buttonZUp.fallingEdge() || buttonZDown.fallingEdge() ) {
-        axisSetup = &axisZ;
-        displayInfoMsg(axisSetup->name);
-        encoder.write(axisSetup->getDMXChannel() * 4);
-        state = SET_DMX_CHANNEL;
-        break;
-      }
-    }
-
     break;
-
-
-
-  case WAIT_FOR_BUTTON_TIMEOUT:
-    displayInfoMsg("timeout");
-    if (buttonXUp.read() == LOW) {
-      displayInfoMsg("set X MAX");
-      axisX.setMaxValue();
-    }
-    if (buttonXDown.read() == LOW) {
-      displayInfoMsg("set X min");
-      axisX.setMinValue();
-    }
-    if (buttonYUp.read() == LOW) {
-      displayInfoMsg("set Y MAX");
-      axisY.setMaxValue();
-    }
-    if (buttonYDown.read() == LOW) {
-      displayInfoMsg("set Y min");
-      axisY.setMinValue();
-    }
-    if (buttonZUp.read() == LOW) {
-      displayInfoMsg("set Z MAX");
-      axisZ.setMaxValue();
-    }
-    if (buttonZDown.read() == LOW) {
-      displayInfoMsg("set Z min");
-      axisZ.setMinValue();
-    }
-    sendDMX();
-    displayValues();
-    state = IDLE;
-    break;
-    
-
+   
 
   case SET_DMX_CHANNEL:
-      if (buttonXUp.risingEdge() || buttonXDown.risingEdge() || buttonYUp.risingEdge() || buttonYDown.risingEdge() || buttonZUp.risingEdge() || buttonZDown.risingEdge()) {
-        displayValues();
-        state = IDLE;
-      }
+    if(selectButton.fallingEdge()){
+      stateEnteredMillis = millis();
+      nextState = IDLE;
+      state = WAIT_FOR_BUTTON;
+    }
+
 
       int32_t newencoderValue;
       newencoderValue = encoder.read() / 4;
-      if(newencoderValue != encoderValue ){
+      //delay(200);
+      if(newencoderValue != encoderValue )
+      {
+        Serial.println(newencoderValue);
         encoderValue = newencoderValue;
+      /*
         axisSetup->setDMXChannel(constrain(encoderValue, 0, 512));
         display.clearDisplay();
         display.setCursor(0,0);
@@ -197,8 +150,9 @@ void stateMachineRun() {
         display.print("enc: ");
         display.println(encoderValue);
         display.display();
+        */
       }
-
+      
     break;
   
   default:
@@ -208,6 +162,8 @@ void stateMachineRun() {
 
 void setup() {
   Serial.begin(115200);
+  //while (!Serial);
+  Serial.println("Welcome!");
   DmxSimple.usePin(17);
   //DmxSimple.maxChannel(3);
 
@@ -221,16 +177,22 @@ void setup() {
 
   selectButton.attach(4, INPUT_PULLUP);
   selectButton.interval(DEBOUNCEINTERVAL);
+
   buttonXUp.attach(11, INPUT_PULLUP);
   buttonXUp.interval(DEBOUNCEINTERVAL);
+
   buttonXDown.attach(12, INPUT_PULLUP);
   buttonXDown.interval(DEBOUNCEINTERVAL);
+  
   buttonYUp.attach(20, INPUT_PULLUP);
   buttonYUp.interval(DEBOUNCEINTERVAL);
+
   buttonYDown.attach(21, INPUT_PULLUP);
   buttonYDown.interval(DEBOUNCEINTERVAL);
+
   buttonZUp.attach(22, INPUT_PULLUP);
   buttonZUp.interval(DEBOUNCEINTERVAL);
+
   buttonZDown.attach(23, INPUT_PULLUP);
   buttonZDown.interval(DEBOUNCEINTERVAL);
 
@@ -239,13 +201,17 @@ void setup() {
     Serial.println(F("SSD1306 allocation failed"));
     for(;;); // Don't proceed, loop forever
   }
+
+  lastTimeValueSend = millis();
 }
 
 void loop() {
+  currentMillis = millis();
   axisX.setValue(encoderX.read() / 4);
   axisY.setValue(encoderY.read() / 4);
   axisZ.setValue(encoderZ.read() / 4);
 
+  // update all buttons
   selectButton.update();
   buttonXUp.update();
   buttonXDown.update();
