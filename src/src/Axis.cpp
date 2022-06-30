@@ -5,12 +5,16 @@ void Axis::mapDMXValue() {
 }
 
 void Axis::setValue(int32_t encoderValueNew) {
-    if(encoderValueNew != encoderValue) {
-        encoderValue = encoderValueNew;
-        hasChanged = true;
-        mapDMXValue();
-    }
+    int diff = encoderValueNew - encoderValue;
+    if (diff == 0) return;
+
+    clampedAxisValue = constrain(clampedAxisValue + diff, minEncoderValue, maxEncoderValue);
+    encoderValue = encoderValueNew;
+    hasChanged = true;
+
+    mapDMXValue();
 }
+
 
 bool Axis::changed() {
     if(hasChanged) {

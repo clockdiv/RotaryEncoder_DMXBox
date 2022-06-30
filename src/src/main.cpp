@@ -106,6 +106,7 @@ void stateMachineRun() {
       state = WAIT_FOR_BUTTON;
     }
 
+    // Send Axis to Serial
     if (currentMillis - lastTimeValueSend > sendValueInterval) {
       Serial.println(axisZ.getValue());
       lastTimeValueSend = currentMillis;
@@ -207,6 +208,7 @@ void setup() {
 
 void loop() {
   currentMillis = millis();
+
   axisX.setValue(encoderX.read() / 4);
   axisY.setValue(encoderY.read() / 4);
   axisZ.setValue(encoderZ.read() / 4);
